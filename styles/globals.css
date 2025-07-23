@@ -464,7 +464,6 @@ body {
 }
 
 .message-content .list-none {
-  list-style: none;
   margin-left: -1.5rem; 
 }
 
@@ -504,6 +503,14 @@ body {
 
 .message-content .md-list-item, .message-content .task-list-item {
   margin: var(--vapor-space-050) 0;
+}
+
+.md-ol {
+  list-style-type: decimal;
+}
+
+.md-ul {
+  list-style-type: '· ';
 }
 
 /* Code blocks */
