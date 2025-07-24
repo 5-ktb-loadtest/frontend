@@ -14,16 +14,30 @@ export const useMessageHandling = (socketRef, currentUser, router, handleSession
   const [uploadError, setUploadError] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
-  const handleMessageChange = useCallback((e) => {
-    const newValue = e.target.value;
+  const handleMessageChange = useCallback((eventOrValue) => {
+    let newValue;
+
+    // ✅ 이벤트 객체인지 문자열인지 자동 판단
+    if (typeof eventOrValue === 'string') {
+      // ChatInput에서 직접 값을 전달한 경우
+      newValue = eventOrValue;
+    } else if (eventOrValue && typeof eventOrValue === 'object' && eventOrValue.target) {
+      // 다른 곳에서 이벤트 객체를 전달한 경우 (역호환성)
+      newValue = eventOrValue.target.value ?? '';
+    } else {
+      console.warn('handleMessageChange: Invalid parameter type', typeof eventOrValue, eventOrValue);
+      return;
+    }
+
     setMessage(newValue);
 
-    const cursorPosition = e.target.selectionStart;
-    const textBeforeCursor = newValue.slice(0, cursorPosition);
-    const atSymbolIndex = textBeforeCursor.lastIndexOf('@');
+    // 멘션 처리
+    const lines = newValue.split('\n');
+    const currentLine = lines[lines.length - 1];
+    const atSymbolIndex = currentLine.lastIndexOf('@');
 
     if (atSymbolIndex !== -1) {
-      const mentionText = textBeforeCursor.slice(atSymbolIndex + 1);
+      const mentionText = currentLine.slice(atSymbolIndex + 1);
       if (!mentionText.includes(' ')) {
         setMentionFilter(mentionText.toLowerCase());
         setShowMentionList(true);
