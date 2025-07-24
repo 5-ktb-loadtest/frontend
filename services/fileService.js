@@ -2,6 +2,14 @@
 import authService from './authService';
 import s3Service from './s3Service';
 
+function s3ToHttpUrl(s3Url) {
+  const match = s3Url.match(/^s3:\/\/([^/]+)\/(.+)$/);
+  if (!match) return s3Url;
+  const [_, bucket, key] = match;
+  // 필요에 따라 region을 환경변수로 빼도 됩니다.
+  return `https://${bucket}.s3.ap-northeast-2.amazonaws.com/${key}`;
+}
+
 class FileService {
   constructor() {
     this.maxFileSize = 10 * 1024 * 1024; // 10MB
@@ -67,6 +75,10 @@ class FileService {
    * @returns {string} 인증된 URL
    */
   _buildAuthenticatedUrl(basePath, options = {}) {
+    // === s3:// → https:// 변환 추가 ===
+    if (basePath.startsWith('s3://')) {
+      return s3ToHttpUrl(basePath);
+    }
     const {
       download = false,
       includeAuth = true,
