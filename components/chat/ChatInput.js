@@ -505,7 +505,7 @@ const ChatInput = forwardRef(({
               value={message}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={isDragging ? "파일을 여기에 놓아주세요." : "메시지를 입력하세요..."}
+              placeholder={isDragging ? "파일을 여기에 놓아주세요." : "메시지를 입력하세요... (@를 입력하여 멘션,"}
               disabled={isDisabled}
               className="chat-input-field"
               rows={3}
@@ -520,6 +520,7 @@ const ChatInput = forwardRef(({
                 lineHeight: '1.5',
                 color: '#333'
               }}
+              data-testid="chat-message-input"
             />
 
             <div className="chat-input-actions">
@@ -529,6 +530,7 @@ const ChatInput = forwardRef(({
                 disabled={isDisabled || (!message.trim() && files.length === 0)}
                 onClick={handleSubmit}
                 className="send-button"
+                data-testid="chat-send-button"
               >
                 <SendIcon size={16} />
                 전송
