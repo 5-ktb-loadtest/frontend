@@ -524,17 +524,22 @@ const ChatInput = forwardRef(({
             />
 
             <div className="chat-input-actions">
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isDisabled || (!message.trim() && files.length === 0)}
-                onClick={handleSubmit}
-                className="send-button"
-                data-testid="chat-send-button"
-              >
-                <SendIcon size={16} />
-                전송
-              </Button>
+          <Button
+            color="primary"
+            size="md"
+            onClick={handleSubmit}
+            disabled={isDisabled || (!message.trim() && files.length === 0)}
+            aria-label="메시지 보내기"
+            style={{ 
+              position: 'absolute',
+              bottom: '8px',
+              right: '8px',
+              padding: '8px 16px'
+            }}
+          >
+            <SendIcon size={20} />
+            <span style={{ marginLeft: 'var(--vapor-space-100)' }}>보내기</span>
+          </Button>
             </div>
           </div>
 
