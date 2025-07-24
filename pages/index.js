@@ -308,6 +308,7 @@ const Login = () => {
               size="lg"
               style={{ width: '100%', marginTop: 'var(--vapor-space-200)' }}
               disabled={loading || !serverStatus.connected}
+              data-testid="login-submit"
             >
               {loading ? '로그인 중...' : '로그인'}
             </Button>
@@ -317,6 +318,7 @@ const Login = () => {
               <Button
                 onClick={() => router.push('/register')}
                 disabled={loading || !serverStatus.connected}
+                data-testid="go-register"
               >
                 회원가입
               </Button>

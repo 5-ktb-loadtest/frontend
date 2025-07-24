@@ -244,6 +244,7 @@ const Register = () => {
                   color="primary"
                   disabled={loading}
                   style={{ minWidth: '200px' }}
+                  data-testid="register-submit"
                 >
                   {loading ? '회원가입 중...' : '회원가입'}
                 </Button>
@@ -254,8 +255,9 @@ const Register = () => {
                   <Text typography="body3">이미 계정이 있으신가요?</Text>
                   <Button
                     size="md"
-                    onClick={() => router.push('/')}
+                    onClick={() => router.push('/')} 
                     disabled={loading}
+                    data-testid="go-login"
                   >
                     로그인
                   </Button>
