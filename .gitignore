@@ -58,5 +58,5 @@ next-env.d.ts
 KEY.*
 KEY
 
-/tests
-/test-results
+/tests/
+/test-results/
