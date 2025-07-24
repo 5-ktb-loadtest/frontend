@@ -13,6 +13,7 @@
     "@emoji-mart/react": "^1.1.1",
     "@vapor-ui/core": "^0.3.1",
     "@vapor-ui/icons": "^0.1.0",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.4.0",
     "bootstrap": "^5.3.3",
     "crypto-js": "^4.2.0",

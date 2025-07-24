@@ -1,226 +1,304 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { CameraIcon, CloseOutlineIcon } from '@vapor-ui/icons';
-import { Button, Text, Callout, IconButton } from '@vapor-ui/core';
+// components/ProfileImageUpload.js - S3 연동 버전
+import { Avatar, Button, Callout, IconButton } from '@vapor-ui/core';
+import {
+  ErrorCircleIcon as AlertCircle,
+  CameraIcon,
+  LoadingOutlineIcon as Loader,
+  TrashOutlineIcon as Trash
+} from '@vapor-ui/icons';
+import { useCallback, useRef, useState } from 'react';
 import authService from '../services/authService';
-import PersistentAvatar from './common/PersistentAvatar';
+import fileService from '../services/fileService';
+import { Box, Stack } from './ui/Layout';
 
-const ProfileImageUpload = ({ currentImage, onImageChange }) => {
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [error, setError] = useState('');
+const ProfileImageUpload = ({
+  currentImageUrl = '',
+  onImageChange,
+  size = 'lg',
+  disabled = false,
+  allowDelete = true,
+  userId
+}) => {
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState('');
+  const [previewUrl, setPreviewUrl] = useState(currentImageUrl);
   const fileInputRef = useRef(null);
 
-  // 프로필 이미지 URL 생성
-  const getProfileImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    return imagePath.startsWith('http') ? 
-      imagePath : 
-      `${process.env.NEXT_PUBLIC_API_URL}${imagePath}`;
-  };
-
-  // 컴포넌트 마운트 시 이미지 설정
-  useEffect(() => {
-    const imageUrl = getProfileImageUrl(currentImage);
-    setPreviewUrl(imageUrl);
-  }, [currentImage]);
-
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
+  // 파일 선택 핸들러
+  const handleFileSelect = useCallback(async (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
+    setError('');
+    setUploading(true);
+    setUploadProgress(0);
+
     try {
-      // 이미지 파일 검증
+      // 파일 유효성 검사
+      await fileService.validateFile(file);
+
+      // 이미지 파일인지 확인
       if (!file.type.startsWith('image/')) {
         throw new Error('이미지 파일만 업로드할 수 있습니다.');
       }
 
-      // 파일 크기 제한 (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('파일 크기는 5MB를 초과할 수 없습니다.');
-      }
+      // 로컬 미리보기 생성
+      const localPreviewUrl = fileService.createPreviewUrl(file);
+      setPreviewUrl(localPreviewUrl);
 
-      setUploading(true);
-      setError('');
-
-      // 파일 미리보기 생성
-      const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
-
-      // 현재 사용자의 인증 정보 가져오기
-      const user = authService.getCurrentUser();
-      if (!user?.token) {
-        throw new Error('인증 정보가 없습니다.');
-      }
-
-      // FormData 생성
-      const formData = new FormData();
-      formData.append('profileImage', file);
-
-      // 파일 업로드 요청
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/profile-image`, {
-        method: 'POST',
-        headers: {
-          'x-auth-token': user.token,
-          'x-session-id': user.sessionId
-        },
-        body: formData
+      console.log('Starting profile image upload:', {
+        fileName: file.name,
+        fileSize: fileService.formatFileSize(file.size),
+        fileType: file.type
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '이미지 업로드에 실패했습니다.');
+      // S3에 업로드
+      const uploadResult = await fileService.uploadProfileImage(
+        file,
+        userId || authService.getCurrentUser()?.id,
+        (progress) => {
+          setUploadProgress(progress);
+        }
+      );
+
+      console.log('Profile image upload completed:', uploadResult);
+
+      // 업로드 성공 시 부모 컴포넌트에 알림
+      if (onImageChange) {
+        onImageChange(uploadResult.url);
       }
 
-      const data = await response.json();
-      
-      // 로컬 스토리지의 사용자 정보 업데이트
-      const updatedUser = {
-        ...user,
-        profileImage: data.imageUrl
-      };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      // 로컬 미리보기 URL 정리
+      if (localPreviewUrl !== uploadResult.url) {
+        fileService.revokePreviewUrl(localPreviewUrl);
+      }
 
-      // 부모 컴포넌트에 변경 알림
-      onImageChange(data.imageUrl);
-
-      // 전역 이벤트 발생
-      window.dispatchEvent(new Event('userProfileUpdate'));
+      // 실제 S3 URL로 미리보기 업데이트
+      setPreviewUrl(uploadResult.url);
 
     } catch (error) {
-      console.error('Image upload error:', error);
-      setError(error.message);
-      setPreviewUrl(getProfileImageUrl(currentImage));
-      
-      // 기존 objectUrl 정리
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl);
+      console.error('Profile image upload error:', error);
+      setError(error.message || '이미지 업로드에 실패했습니다.');
+
+      // 에러 시 이전 이미지로 복원
+      setPreviewUrl(currentImageUrl);
+
+      // 로컬 미리보기 URL 정리
+      const localPreview = fileService.createPreviewUrl(file);
+      if (localPreview) {
+        fileService.revokePreviewUrl(localPreview);
       }
     } finally {
       setUploading(false);
+      setUploadProgress(0);
+
+      // 파일 입력 필드 리셋
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     }
-  };
+  }, [currentImageUrl, onImageChange, userId]);
 
-  const handleRemoveImage = async () => {
+  // 이미지 삭제 핸들러
+  const handleImageDelete = useCallback(async () => {
+    if (!previewUrl || !allowDelete || uploading) return;
+
+    const confirmDelete = window.confirm('프로필 이미지를 삭제하시겠습니까?');
+    if (!confirmDelete) return;
+
+    setError('');
+    setUploading(true);
+
     try {
-      setUploading(true);
-      setError('');
-
-      const user = authService.getCurrentUser();
-      if (!user?.token) {
-        throw new Error('인증 정보가 없습니다.');
+      // S3에서 이미지 삭제
+      if (previewUrl !== currentImageUrl) {
+        await fileService.deleteFile(previewUrl);
       }
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/profile-image`, {
-        method: 'DELETE',
-        headers: {
-          'x-auth-token': user.token,
-          'x-session-id': user.sessionId
-        }
-      });
+      // 미리보기 초기화
+      setPreviewUrl('');
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '이미지 삭제에 실패했습니다.');
+      // 부모 컴포넌트에 삭제 알림
+      if (onImageChange) {
+        onImageChange('');
       }
 
-      // 로컬 스토리지의 사용자 정보 업데이트
-      const updatedUser = {
-        ...user,
-        profileImage: ''
-      };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-
-      // 기존 objectUrl 정리
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl);
-      }
-
-      setPreviewUrl(null);
-      onImageChange('');
-
-      // 전역 이벤트 발생
-      window.dispatchEvent(new Event('userProfileUpdate'));
+      console.log('Profile image deleted successfully');
 
     } catch (error) {
-      console.error('Image removal error:', error);
-      setError(error.message);
+      console.error('Profile image deletion error:', error);
+      setError('이미지 삭제에 실패했습니다.');
     } finally {
       setUploading(false);
     }
-  };
+  }, [previewUrl, currentImageUrl, allowDelete, uploading, onImageChange]);
 
-  // 컴포넌트 언마운트 시 cleanup
-  useEffect(() => {
-    return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl);
+  // 파일 입력 클릭 트리거
+  const triggerFileInput = useCallback(() => {
+    if (!disabled && !uploading && fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  }, [disabled, uploading]);
+
+  // 드래그 앤 드롭 핸들러
+  const handleDrop = useCallback(async (event) => {
+    event.preventDefault();
+
+    if (disabled || uploading) return;
+
+    const files = event.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+
+      // 파일 입력에 설정 (handleFileSelect가 호출됨)
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      if (fileInputRef.current) {
+        fileInputRef.current.files = dataTransfer.files;
+        handleFileSelect({ target: { files: dataTransfer.files } });
       }
-    };
-  }, [previewUrl]);
+    }
+  }, [disabled, uploading, handleFileSelect]);
 
-  // 현재 사용자 정보
-  const currentUser = authService.getCurrentUser();
+  const handleDragOver = useCallback((event) => {
+    event.preventDefault();
+  }, []);
 
-  return (
-    <div>
-      <div>
-        <PersistentAvatar
-          user={currentUser}
-          size="xl"
-          className="mx-auto mb-2"
-          showInitials={true}
-        />
-        
-        <div className="mt-2">
-          <Button
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            size="sm"
-          >
-            <CameraIcon size={16} />
-            <span style={{ marginLeft: '8px' }}>이미지 변경</span>
-          </Button>
+  // 아바타 사이즈 설정
+  const avatarSize = {
+    sm: 'w-16 h-16',
+    md: 'w-24 h-24',
+    lg: 'w-32 h-32',
+    xl: 'w-40 h-40'
+  }[size] || 'w-32 h-32';
 
-          {previewUrl && (
-            <IconButton
-              variant="outline"
-              color="danger"
-              onClick={handleRemoveImage}
-              disabled={uploading}
-              style={{ marginLeft: '8px' }}
-            >
-              <CloseOutlineIcon size={16} />
-            </IconButton>
-          )}
+  // 업로드 진행률 렌더링
+  const renderProgress = () => {
+    if (!uploading) return null;
+
+    return (
+      <div className="mt-2">
+        <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+          <span>업로드 중...</span>
+          <span>{uploadProgress}%</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div
+            className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+            style={{ width: `${uploadProgress}%` }}
+          />
         </div>
       </div>
+    );
+  };
 
+  // 에러 메시지 렌더링
+  const renderError = () => {
+    if (!error) return null;
+
+    return (
+      <Callout color="danger" className="mt-2">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-sm">{error}</span>
+        </div>
+      </Callout>
+    );
+  };
+
+  return (
+    <Stack spacing="md" className="profile-image-upload">
+      {/* 아바타 미리보기 영역 */}
+      <Box className="relative inline-block">
+        <div
+          className={`${avatarSize} relative cursor-pointer group transition-all duration-200 hover:opacity-80`}
+          onClick={triggerFileInput}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          role="button"
+          tabIndex={0}
+          aria-label="프로필 이미지 업로드"
+        >
+          <Avatar
+            src={previewUrl}
+            size={size}
+            className="w-full h-full"
+            alt="프로필 이미지"
+          />
+
+          {/* 오버레이 */}
+          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-full flex items-center justify-center">
+            {uploading ? (
+              <Loader className="w-6 h-6 text-white animate-spin" />
+            ) : (
+              <CameraIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            )}
+          </div>
+        </div>
+
+        {/* 삭제 버튼 */}
+        {allowDelete && previewUrl && !uploading && (
+          <IconButton
+            size="sm"
+            variant="outline"
+            onClick={handleImageDelete}
+            className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white border-red-500"
+            title="이미지 삭제"
+            aria-label="프로필 이미지 삭제"
+          >
+            <Trash className="w-3 h-3" />
+          </IconButton>
+        )}
+      </Box>
+
+      {/* 파일 입력 (숨김) */}
       <input
         ref={fileInputRef}
         type="file"
-        className="hidden"
         accept="image/*"
         onChange={handleFileSelect}
+        disabled={disabled || uploading}
+        className="hidden"
+        aria-hidden="true"
       />
 
-      {error && (
-        <div className="w-full max-w-sm mx-auto">
-          <Callout color="danger" className="mt-2">
-            {error}
-          </Callout>
-        </div>
-      )}
+      {/* 업로드 버튼 */}
+      <div className="flex gap-2">
+        <Button
+          onClick={triggerFileInput}
+          disabled={disabled || uploading}
+          variant="outline"
+          size="sm"
+          className="flex items-center gap-2"
+        >
+          {uploading ? (
+            <>
+              <Loader className="w-4 h-4 animate-spin" />
+              업로드 중...
+            </>
+          ) : (
+            <>
+              <CameraIcon className="w-4 h-4" />
+              이미지 선택
+            </>
+          )}
+        </Button>
+      </div>
 
-      {uploading && (
-        <Text typography="body3" color="neutral-weak" className="text-center mt-2">
-          이미지 업로드 중...
-        </Text>
-      )}
-    </div>
+      {/* 진행률 표시 */}
+      {renderProgress()}
+
+      {/* 에러 메시지 */}
+      {renderError()}
+
+      {/* 도움말 텍스트 */}
+      <div className="text-xs text-gray-500">
+        <p>JPG, PNG, GIF, WebP 형식 지원</p>
+        <p>최대 파일 크기: 10MB</p>
+        <p>드래그 앤 드롭으로도 업로드 가능</p>
+      </div>
+    </Stack>
   );
 };
 
