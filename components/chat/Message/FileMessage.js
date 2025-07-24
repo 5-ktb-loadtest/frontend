@@ -61,6 +61,7 @@ const FileMessage = forwardRef(({
   useEffect(() => {
     if (msg?.file) {
       try {
+        console.log('msg.file', msg.file);
         // ✅ 개선된 방식: fileService에서 roomId를 함께 전달
         const url = fileService.getThumbnailUrl(msg.file, { preview: true }, msg.room);
         setPreviewUrl(url);
