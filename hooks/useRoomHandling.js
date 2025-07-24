@@ -113,8 +113,8 @@ export const useRoomHandling = (
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         timeout: 30000,
-        pingTimeout: 30000,
-        pingInterval: 25000,
+        pingTimeout: 120000,
+        pingInterval: 60000,
         forceNew: true,
         autoConnect: true
       });

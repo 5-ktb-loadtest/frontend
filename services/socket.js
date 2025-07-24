@@ -91,6 +91,8 @@ class SocketService {
           reconnectionDelay: this.retryDelay,
           reconnectionDelayMax: 5000,
           timeout: 20000,
+          pingInterval:60000,
+          pingTimeout: 120000,
           forceNew: true
         });
 
