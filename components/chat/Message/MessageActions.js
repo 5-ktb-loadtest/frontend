@@ -1,17 +1,17 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import ReactDOM from 'react-dom';
-import { LikeIcon, CopyIcon } from '@vapor-ui/icons';
 import { Button, IconButton } from '@vapor-ui/core';
-import EmojiPicker from '../EmojiPicker';
+import { CopyIcon, LikeIcon } from '@vapor-ui/icons';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { Toast } from '../../Toast';
+import EmojiPicker from '../EmojiPicker';
 
-const MessageActions = ({ 
-  messageId,
-  messageContent,
-  reactions,
-  currentUserId,
-  onReactionAdd,
-  onReactionRemove,
+const MessageActions = ({
+  messageId = '',
+  messageContent = '',
+  reactions = {},
+  currentUserId = null,
+  onReactionAdd = () => { },
+  onReactionRemove = () => { },
   isMine = false,
   room = null
 }) => {
@@ -90,19 +90,19 @@ const MessageActions = ({
     // 사용자 ID들을 문자열로 변환하여 비교하기 위한 Map 생성
     const participantMap = new Map(
       room.participants.map(p => [
-        String(p._id || p.id), 
+        String(p._id || p.id),
         p.name
       ])
     );
 
     const reactionUsers = userIds.map(userId => {
       const userIdStr = String(userId);
-      
+
       // 현재 사용자인 경우
       if (userIdStr === String(currentUserId)) {
         return '나';
       }
-      
+
       // 참여자 목록에서 해당 사용자 찾기
       const userName = participantMap.get(userIdStr);
       return userName || '알 수 없는 사용자';
@@ -127,7 +127,7 @@ const MessageActions = ({
       <div className="message-reactions">
         {Object.entries(reactions).map(([emoji, users]) => {
           const reactionId = `reaction-${messageId}-${emoji}`;
-          
+
           if (!reactionRefs.current[emoji]) {
             reactionRefs.current[emoji] = React.createRef();
           }
@@ -160,7 +160,7 @@ const MessageActions = ({
     );
   }, [reactions, messageId, currentUserId, tooltipStates, handleReactionSelect, toggleTooltip, getReactionTooltip]);
 
-  const toggleEmojiPicker = useCallback((e) => {    
+  const toggleEmojiPicker = useCallback((e) => {
     e.stopPropagation();
     setShowEmojiPicker(prev => !prev);
   }, []);
@@ -168,38 +168,38 @@ const MessageActions = ({
   // Calculate emoji picker position
   const getEmojiPickerPosition = useCallback(() => {
     if (!emojiButtonRef.current) return { top: 0, left: 0 };
-    
+
     const buttonRect = emojiButtonRef.current.getBoundingClientRect();
     const pickerHeight = 350; // Approximate height
     const pickerWidth = 350; // Approximate width
     const buttonHeight = buttonRect.height;
-    
+
     // Position above the left edge of the emoji button with gap
     let top = buttonRect.top - pickerHeight - 15; // 15px gap above button
     let left = buttonRect.left; // Align with left edge of button
-    
+
     // If not enough space above, show below the button
     if (top < 10) {
       top = buttonRect.bottom + 15; // 15px gap below button
     }
-    
+
     // Ensure picker doesn't go off the right edge
     if (left + pickerWidth > window.innerWidth) {
       left = window.innerWidth - pickerWidth - 10;
     }
-    
+
     // Ensure picker doesn't go off the left edge
     if (left < 10) {
       left = 10;
     }
-    
+
     return { top, left };
   }, []);
 
   return (
     <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`} ref={containerRef}>
       {renderReactions()}
-      
+
       <div className={`message-actions-wrapper ${isMine ? 'mine' : ''}`}>
         <div className="message-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--vapor-space-100)' }}>
           <div style={{ position: 'relative' }}>
@@ -214,7 +214,7 @@ const MessageActions = ({
             </IconButton>
 
             {showEmojiPicker && typeof window !== 'undefined' && ReactDOM.createPortal(
-              <div 
+              <div
                 ref={emojiPickerRef}
                 style={{
                   position: 'fixed',
@@ -229,7 +229,7 @@ const MessageActions = ({
                   boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
                   border: '1px solid var(--vapor-color-border)'
                 }}>
-                  <EmojiPicker 
+                  <EmojiPicker
                     onSelect={handleReactionSelect}
                     emojiSize={20}
                     perLine={8}
@@ -252,17 +252,6 @@ const MessageActions = ({
       </div>
     </div>
   );
-};
-
-MessageActions.defaultProps = {
-  messageId: '',
-  messageContent: '',
-  reactions: {},
-  currentUserId: null,
-  onReactionAdd: () => {},
-  onReactionRemove: () => {},
-  isMine: false,
-  room: null
 };
 
 export default React.memo(MessageActions);

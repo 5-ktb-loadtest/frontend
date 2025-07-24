@@ -1,3 +1,4 @@
+// components/chat/ChatInput.js - 수정된 버전
 import { Button, IconButton } from '@vapor-ui/core';
 import {
   AttachFileOutlineIcon,
@@ -31,7 +32,7 @@ const ChatInput = forwardRef(({
   setShowMentionList = () => { },
   setMentionFilter = () => { },
   setMentionIndex = () => { },
-  room = null // room prop 추가
+  room = null
 }, ref) => {
   const emojiPickerRef = useRef(null);
   const emojiButtonRef = useRef(null);
@@ -51,17 +52,32 @@ const ChatInput = forwardRef(({
     try {
       await fileService.validateFile(file);
 
+      // 파일 프리뷰 객체 생성 - 구조를 명확히 정의
       const filePreview = {
-        file,
+        // 원본 File 객체
+        file: file,
+        // 미리보기용 blob URL
         url: URL.createObjectURL(file),
+        // 파일 정보
         name: file.name,
         type: file.type,
-        size: file.size
+        size: file.size,
+        // 추가 메타데이터
+        id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        uploadedAt: new Date().toISOString()
       };
+
+      console.log('File preview created:', {
+        name: filePreview.name,
+        type: filePreview.type,
+        size: filePreview.size,
+        hasFile: !!filePreview.file,
+        hasUrl: !!filePreview.url
+      });
 
       setFiles(prev => [...prev, filePreview]);
       setUploadError(null);
-      onFileSelect?.(file);
+      onFileSelect?.(filePreview);
 
     } catch (error) {
       console.error('File validation error:', error);
@@ -74,8 +90,13 @@ const ChatInput = forwardRef(({
   }, [onFileSelect]);
 
   const handleFileRemove = useCallback((fileToRemove) => {
-    setFiles(prev => prev.filter(file => file.name !== fileToRemove.name));
-    URL.revokeObjectURL(fileToRemove.url);
+    setFiles(prev => prev.filter(file => file.id !== fileToRemove.id));
+
+    // blob URL 정리
+    if (fileToRemove.url && fileToRemove.url.startsWith('blob:')) {
+      URL.revokeObjectURL(fileToRemove.url);
+    }
+
     setUploadError(null);
     setUploadProgress(0);
   }, []);
@@ -95,22 +116,59 @@ const ChatInput = forwardRef(({
     }
   }, [handleFileValidationAndPreview]);
 
+  // 수정된 handleSubmit 함수
   const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
 
+    console.log('ChatInput handleSubmit called:', {
+      filesCount: files.length,
+      messageLength: message.trim().length,
+      files: files.map(f => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        hasFile: !!f.file,
+        hasUrl: !!f.url
+      }))
+    });
+
     if (files.length > 0) {
       try {
-        const file = files[0];
-        if (!file || !file.file) {
-          throw new Error('파일이 선택되지 않았습니다.');
+        const fileData = files[0];
+
+        // 파일 데이터 유효성 검사 - 구조 확인
+        if (!fileData) {
+          throw new Error('파일 데이터가 없습니다.');
         }
 
+        if (!fileData.file) {
+          throw new Error('원본 파일 객체가 없습니다.');
+        }
+
+        console.log('Submitting file message:', {
+          fileName: fileData.name,
+          fileType: fileData.type,
+          fileSize: fileData.size,
+          messageContent: message.trim()
+        });
+
+        // 파일 메시지 전송
         onSubmit({
           type: 'file',
           content: message.trim(),
-          fileData: file
+          fileData: {
+            // 실제 File 객체
+            file: fileData.file,
+            // 파일 메타데이터
+            name: fileData.name,
+            type: fileData.type,
+            size: fileData.size,
+            url: fileData.url, // 미리보기 URL (필요한 경우)
+            id: fileData.id
+          }
         });
 
+        // 전송 후 상태 초기화
         setMessage('');
         setFiles([]);
 
@@ -119,196 +177,77 @@ const ChatInput = forwardRef(({
         setUploadError(error.message);
       }
     } else if (message.trim()) {
+      // 텍스트 메시지 전송
+      console.log('Submitting text message:', message.trim());
+
       onSubmit({
         type: 'text',
         content: message.trim()
       });
+
       setMessage('');
     }
   }, [files, message, onSubmit, setMessage]);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        showEmojiPicker &&
-        !emojiPickerRef.current?.contains(event.target) &&
-        !emojiButtonRef.current?.contains(event.target)
-      ) {
-        setShowEmojiPicker(false);
-      }
-    };
-
-    const handlePaste = async (event) => {
-      if (!messageInputRef?.current?.contains(event.target)) return;
-
-      const items = event.clipboardData?.items;
-      if (!items) return;
-
-      const fileItem = Array.from(items).find(
-        item => item.kind === 'file' &&
-          (item.type.startsWith('image/') ||
-            item.type.startsWith('video/') ||
-            item.type.startsWith('audio/') ||
-            item.type === 'application/pdf')
-      );
-
-      if (!fileItem) return;
-
-      const file = fileItem.getAsFile();
-      if (!file) return;
-
-      try {
-        await handleFileValidationAndPreview(file);
-        event.preventDefault();
-      } catch (error) {
-        console.error('File paste error:', error);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('paste', handlePaste);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('paste', handlePaste);
-      files.forEach(file => URL.revokeObjectURL(file.url));
-    };
-  }, [showEmojiPicker, setShowEmojiPicker, files, messageInputRef, handleFileValidationAndPreview]);
-
-  const calculateMentionPosition = useCallback((textarea, atIndex) => {
-    // Get all text before @ symbol
-    const textBeforeAt = textarea.value.slice(0, atIndex);
-    const lines = textBeforeAt.split('\n');
-    const currentLineIndex = lines.length - 1;
-    const currentLineText = lines[currentLineIndex];
-
-    // Create a hidden div to measure exact text width
-    const measureDiv = document.createElement('div');
-    measureDiv.style.position = 'absolute';
-    measureDiv.style.visibility = 'hidden';
-    measureDiv.style.whiteSpace = 'pre';
-    measureDiv.style.font = window.getComputedStyle(textarea).font;
-    measureDiv.style.fontSize = window.getComputedStyle(textarea).fontSize;
-    measureDiv.style.fontFamily = window.getComputedStyle(textarea).fontFamily;
-    measureDiv.style.fontWeight = window.getComputedStyle(textarea).fontWeight;
-    measureDiv.style.letterSpacing = window.getComputedStyle(textarea).letterSpacing;
-    measureDiv.style.textTransform = window.getComputedStyle(textarea).textTransform;
-    measureDiv.textContent = currentLineText;
-
-    document.body.appendChild(measureDiv);
-    const textWidth = measureDiv.offsetWidth;
-    document.body.removeChild(measureDiv);
-
-    // Get textarea position and compute styles
-    const textareaRect = textarea.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(textarea);
-    const paddingLeft = parseInt(computedStyle.paddingLeft);
-    const paddingTop = parseInt(computedStyle.paddingTop);
-    const lineHeight = parseInt(computedStyle.lineHeight) || (parseFloat(computedStyle.fontSize) * 1.5);
-    const scrollTop = textarea.scrollTop;
-
-    // Calculate exact position of @ symbol
-    let left = textareaRect.left + paddingLeft + textWidth;
-    // Position directly above the @ character (with small gap)
-    let top = textareaRect.top + paddingTop + (currentLineIndex * lineHeight) - scrollTop;
-
-    // Ensure dropdown stays within viewport
-    const dropdownWidth = 320; // Approximate width
-    const dropdownHeight = 250; // Approximate height
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Adjust horizontal position if needed
-    if (left + dropdownWidth > viewportWidth) {
-      left = viewportWidth - dropdownWidth - 10;
-    }
-    if (left < 10) {
-      left = 10;
-    }
-
-    // Position dropdown 40px lower to be closer to the @ cursor
-    top = top + 40; // Move 40px down from the cursor line
-
-    // If not enough space above, show below
-    if (top - dropdownHeight < 10) {
-      top = textareaRect.top + paddingTop + ((currentLineIndex + 1) * lineHeight) - scrollTop + 2;
-    } else {
-      // Show above - adjust top to account for dropdown height
-      top = top - dropdownHeight;
-    }
-
-    return { top, left };
-  }, []);
-
+  // 메시지 입력 핸들러
   const handleInputChange = useCallback((e) => {
     const value = e.target.value;
-    const cursorPosition = e.target.selectionStart;
-    const textBeforeCursor = value.slice(0, cursorPosition);
-    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
+    setMessage(value);
+    onMessageChange(value);
 
-    const textarea = e.target;
-    textarea.style.height = 'auto';
-    const maxHeight = parseFloat(getComputedStyle(document.documentElement).fontSize) * 1.5 * 10;
+    // 멘션 기능 처리
+    const lines = value.split('\n');
+    const currentLine = lines[lines.length - 1];
+    const mentionMatch = currentLine.match(/@(\w*)$/);
 
-    if (textarea.scrollHeight > maxHeight) {
-      textarea.style.height = `${maxHeight}px`;
-      textarea.style.overflowY = 'auto';
+    if (mentionMatch) {
+      const filter = mentionMatch[1];
+      setMentionFilter(filter);
+      setShowMentionList(true);
+      setMentionIndex(0);
+
+      // 멘션 드롭다운 위치 계산
+      const textArea = e.target;
+      const { top, left } = textArea.getBoundingClientRect();
+      setMentionPosition({
+        top: top - 200,
+        left: left + 10
+      });
     } else {
-      textarea.style.height = `${textarea.scrollHeight}px`;
-      textarea.style.overflowY = 'hidden';
+      setShowMentionList(false);
     }
+  }, [setMessage, onMessageChange, setMentionFilter, setShowMentionList, setMentionIndex]);
 
-    onMessageChange(e);
-
-    if (lastAtSymbol !== -1) {
-      const textAfterAt = textBeforeCursor.slice(lastAtSymbol + 1);
-      const hasSpaceAfterAt = textAfterAt.includes(' ');
-
-      if (!hasSpaceAfterAt) {
-        setMentionFilter(textAfterAt.toLowerCase());
-        setShowMentionList(true);
-        setMentionIndex(0);
-
-        // Calculate and set mention dropdown position
-        const position = calculateMentionPosition(textarea, lastAtSymbol);
-        setMentionPosition(position);
-        return;
-      }
-    }
-
-    setShowMentionList(false);
-  }, [onMessageChange, setMentionFilter, setShowMentionList, setMentionIndex, calculateMentionPosition]);
-
+  // 멘션 선택 핸들러
   const handleMentionSelect = useCallback((user) => {
-    if (!messageInputRef?.current) return;
+    const lines = message.split('\n');
+    const currentLine = lines[lines.length - 1];
+    const mentionMatch = currentLine.match(/@(\w*)$/);
 
-    const cursorPosition = messageInputRef.current.selectionStart;
-    const textBeforeCursor = message.slice(0, cursorPosition);
-    const textAfterCursor = message.slice(cursorPosition);
-    const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
-
-    if (lastAtSymbol !== -1) {
-      const newMessage =
-        message.slice(0, lastAtSymbol) +
-        `@${user.name} ` +
-        textAfterCursor;
+    if (mentionMatch) {
+      const beforeMention = currentLine.substring(0, currentLine.lastIndexOf('@'));
+      const newLine = beforeMention + `@${user.name} `;
+      lines[lines.length - 1] = newLine;
+      const newMessage = lines.join('\n');
 
       setMessage(newMessage);
       setShowMentionList(false);
 
+      // 포커스 유지
       setTimeout(() => {
         if (messageInputRef.current) {
-          const newPosition = lastAtSymbol + user.name.length + 2;
           messageInputRef.current.focus();
-          messageInputRef.current.setSelectionRange(newPosition, newPosition);
+          const newCursorPos = newMessage.length;
+          messageInputRef.current.setSelectionRange(newCursorPos, newCursorPos);
         }
       }, 0);
     }
   }, [message, setMessage, setShowMentionList, messageInputRef]);
 
+  // 키보드 이벤트 핸들러
   const handleKeyDown = useCallback((e) => {
     if (showMentionList) {
-      const participants = getFilteredParticipants(room); // room 객체 전달
+      const participants = getFilteredParticipants(room);
       const participantsCount = participants.length;
 
       switch (e.key) {
@@ -343,12 +282,6 @@ const ChatInput = forwardRef(({
           return;
       }
     } else if (e.key === 'Enter' && !e.shiftKey) {
-
-      // IME 조합 중일 때는 Enter 키 무시
-      if (e.nativeEvent.isComposing) {
-        return;
-      }
-
       e.preventDefault();
       if (message.trim() || files.length > 0) {
         handleSubmit(e);
@@ -368,9 +301,10 @@ const ChatInput = forwardRef(({
     setMentionIndex,
     setShowMentionList,
     setShowEmojiPicker,
-    room // room 의존성 추가
+    room
   ]);
 
+  // 마크다운 액션 핸들러
   const handleMarkdownAction = useCallback((markdown) => {
     if (!messageInputRef?.current) return;
 
@@ -430,6 +364,7 @@ const ChatInput = forwardRef(({
     }, 0);
   }, [message, setMessage, messageInputRef]);
 
+  // 이모지 선택 핸들러
   const handleEmojiSelect = useCallback((emoji) => {
     if (!messageInputRef?.current) return;
 
@@ -454,6 +389,61 @@ const ChatInput = forwardRef(({
   const toggleEmojiPicker = useCallback(() => {
     setShowEmojiPicker(prev => !prev);
   }, [setShowEmojiPicker]);
+
+  // 붙여넣기 이벤트 핸들러
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        showEmojiPicker &&
+        !emojiPickerRef.current?.contains(event.target) &&
+        !emojiButtonRef.current?.contains(event.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    const handlePaste = async (event) => {
+      if (!messageInputRef?.current?.contains(event.target)) return;
+
+      const items = event.clipboardData?.items;
+      if (!items) return;
+
+      const fileItem = Array.from(items).find(
+        item => item.kind === 'file' &&
+          (item.type.startsWith('image/') ||
+            item.type.startsWith('video/') ||
+            item.type.startsWith('audio/') ||
+            item.type === 'application/pdf')
+      );
+
+      if (!fileItem) return;
+
+      const file = fileItem.getAsFile();
+      if (!file) return;
+
+      try {
+        await handleFileValidationAndPreview(file);
+        event.preventDefault();
+      } catch (error) {
+        console.error('File paste error:', error);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('paste', handlePaste);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('paste', handlePaste);
+
+      // 컴포넌트 언마운트 시 blob URL 정리
+      files.forEach(file => {
+        if (file.url && file.url.startsWith('blob:')) {
+          URL.revokeObjectURL(file.url);
+        }
+      });
+    };
+  }, [showEmojiPicker, messageInputRef, files, handleFileValidationAndPreview, setShowEmojiPicker]);
 
   const isDisabled = disabled || uploading || externalUploading;
 
@@ -507,65 +497,38 @@ const ChatInput = forwardRef(({
               value={message}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={isDragging ? "파일을 여기에 놓아주세요." : "메시지를 입력하세요... (@를 입력하여 멘션, Shift + Enter로 줄바꿈)"}
+              placeholder={isDragging ? "파일을 여기에 놓아주세요." : "메시지를 입력하세요..."}
               disabled={isDisabled}
-              rows={1}
-              autoComplete="off"
-              spellCheck="true"
-              className="chat-input-textarea"
+              className="chat-input-field"
+              rows={3}
               style={{
-                minHeight: '40px',
-                maxHeight: `${parseFloat(getComputedStyle(document.documentElement).fontSize) * 1.5 * 10}px`,
-                resize: 'none',
                 width: '100%',
-                border: '1px solid var(--vapor-color-border)',
-                borderRadius: 'var(--vapor-radius-md)',
-                padding: 'var(--vapor-space-150)',
-                paddingRight: '120px', // Space for send button
-                backgroundColor: 'var(--vapor-color-normal)',
-                color: 'var(--vapor-color-text-primary)',
-                fontSize: 'var(--vapor-font-size-100)',
-                lineHeight: '1.5',
-                transition: 'all 0.2s ease'
+                resize: 'none',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                padding: '12px',
+                fontFamily: 'inherit',
+                fontSize: '14px',
+                lineHeight: '1.5'
               }}
             />
-            <Button
-              color="primary"
-              size="md"
-              onClick={handleSubmit}
-              disabled={isDisabled || (!message.trim() && files.length === 0)}
-              aria-label="메시지 보내기"
-              style={{
-                position: 'absolute',
-                bottom: '8px',
-                right: '8px',
-                padding: '8px 16px'
-              }}
-            >
-              <SendIcon size={20} />
-              <span style={{ marginLeft: 'var(--vapor-space-100)' }}>보내기</span>
-            </Button>
+
+            <div className="chat-input-actions">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isDisabled || (!message.trim() && files.length === 0)}
+                onClick={handleSubmit}
+                className="send-button"
+              >
+                <SendIcon size={16} />
+                전송
+              </Button>
+            </div>
           </div>
 
-          <div className="chat-input-actions">
-            {showEmojiPicker && (
-              <div
-                ref={emojiPickerRef}
-                className="emoji-picker-wrapper"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="emoji-picker-container">
-                  <EmojiPicker
-                    onSelect={handleEmojiSelect}
-                    emojiSize={20}
-                    emojiButtonSize={36}
-                    perLine={8}
-                    maxFrequentRows={4}
-                  />
-                </div>
-              </div>
-            )}
-            <HStack gap="100">
+          <div className="chat-input-toolbar-bottom">
+            <HStack spacing="sm">
               <IconButton
                 ref={emojiButtonRef}
                 variant="ghost"
@@ -573,9 +536,6 @@ const ChatInput = forwardRef(({
                 onClick={toggleEmojiPicker}
                 disabled={isDisabled}
                 aria-label="이모티콘"
-                style={{ transition: 'all 0.2s ease' }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
                 <LikeIcon size={20} />
               </IconButton>
@@ -585,9 +545,6 @@ const ChatInput = forwardRef(({
                 onClick={() => fileInputRef?.current?.click()}
                 disabled={isDisabled}
                 aria-label="파일 첨부"
-                style={{ transition: 'all 0.2s ease' }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
                 <AttachFileOutlineIcon size={20} />
               </IconButton>
@@ -600,6 +557,12 @@ const ChatInput = forwardRef(({
               />
             </HStack>
           </div>
+
+          {showEmojiPicker && (
+            <div className="emoji-picker-container" ref={emojiPickerRef}>
+              <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+            </div>
+          )}
         </div>
       </div>
 
