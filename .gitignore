@@ -12,6 +12,7 @@
 /.next/
 
 
+
 # production
 /build
 
@@ -57,3 +58,5 @@ next-env.d.ts
 KEY.*
 KEY
 
+/tests
+/test-results
