@@ -9,7 +9,6 @@ import {
   SoundOnIcon as SoundOn
 } from '@vapor-ui/icons';
 import React, { forwardRef, useEffect, useState } from 'react';
-import authService from '../../../services/authService';
 import fileService from '../../../services/fileService';
 import PersistentAvatar from '../../common/PersistentAvatar';
 import ReadStatus from '../ReadStatus';
@@ -40,7 +39,14 @@ const FileActions = ({ handleViewInNewTab, handleFileDownload }) => (
 );
 
 const FileMessage = forwardRef(({
-  msg = {},
+  msg = {
+    file: {
+      mimetype: '',
+      filename: '',
+      originalname: '',
+      size: 0
+    }
+  },
   isMine = false,
   currentUser = null,
   onReactionAdd,
@@ -54,14 +60,22 @@ const FileMessage = forwardRef(({
 
   useEffect(() => {
     if (msg?.file) {
-      const url = fileService.getThumbnailUrl(msg.file, true);
-      setPreviewUrl(url);
-      console.debug('Preview URL generated:', {
-        filename: msg.file.filename,
-        url
-      });
+      try {
+        // ✅ 개선된 방식: fileService에서 roomId를 함께 전달
+        const url = fileService.getThumbnailUrl(msg.file, { preview: true }, msg.room);
+        setPreviewUrl(url);
+
+        console.debug('Preview URL generated:', {
+          fileInfo: msg.file,
+          roomId: msg.room,
+          url
+        });
+      } catch (error) {
+        console.error('Preview URL generation error:', error);
+        setError('미리보기를 생성할 수 없습니다.');
+      }
     }
-  }, [msg?.file]);
+  }, [msg?.file, msg?.room]);
 
   if (!msg?.file) {
     console.error('File data is missing:', msg);
@@ -119,6 +133,7 @@ const FileMessage = forwardRef(({
     />
   );
 
+  // ✅ 개선된 파일 다운로드 핸들러
   const handleFileDownload = async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -129,20 +144,52 @@ const FileMessage = forwardRef(({
         throw new Error('파일 정보가 없습니다.');
       }
 
-      const user = authService.getCurrentUser();
-      if (!user?.token || !user?.sessionId) {
-        throw new Error('인증 정보가 없습니다.');
+      console.log('Download initiated for:', msg.file);
+
+      // ✅ fileService의 다운로드 URL 생성 메서드 사용
+      const downloadUrl = fileService.getDownloadUrl(msg.file, msg.room);
+
+      console.log('Generated download URL:', downloadUrl);
+
+      // Method 1: fetch를 사용한 다운로드 (더 안정적)
+      try {
+        const response = await fetch(downloadUrl);
+
+        if (!response.ok) {
+          throw new Error(`다운로드 실패: ${response.status} ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        const downloadLink = document.createElement('a');
+        const objectUrl = URL.createObjectURL(blob);
+
+        downloadLink.href = objectUrl;
+        downloadLink.download = getDecodedFilename(msg.file.originalname) || msg.file.filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        // 메모리 정리
+        URL.revokeObjectURL(objectUrl);
+
+        console.log('File downloaded successfully via fetch');
+
+      } catch (fetchError) {
+        console.warn('Fetch download failed, trying direct link method:', fetchError);
+
+        // Method 2: 직접 링크 방식 (fallback)
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = getDecodedFilename(msg.file.originalname) || msg.file.filename;
+        link.target = '_blank'; // 새 탭에서 열기
+
+        // 일부 브라우저에서는 사용자 제스처가 필요
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log('File download initiated via direct link');
       }
-
-      const baseUrl = fileService.getFileUrl(msg.file.filename, false);
-      const authenticatedUrl = `${baseUrl}?token=${encodeURIComponent(user.token)}&sessionId=${encodeURIComponent(user.sessionId)}&download=true`;
-
-      const link = document.createElement('a');
-      link.href = authenticatedUrl;
-      link.download = getDecodedFilename(msg.file.originalname);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
 
     } catch (error) {
       console.error('File download error:', error);
@@ -150,6 +197,7 @@ const FileMessage = forwardRef(({
     }
   };
 
+  // ✅ 개선된 새 탭에서 보기 핸들러
   const handleViewInNewTab = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -160,25 +208,27 @@ const FileMessage = forwardRef(({
         throw new Error('파일 정보가 없습니다.');
       }
 
-      const user = authService.getCurrentUser();
-      if (!user?.token || !user?.sessionId) {
-        throw new Error('인증 정보가 없습니다.');
-      }
+      // ✅ fileService의 미리보기 URL 생성 메서드 사용
+      const viewUrl = fileService.getPreviewUrl(msg.file, msg.room);
 
-      const baseUrl = fileService.getFileUrl(msg.file.filename, true);
-      const authenticatedUrl = `${baseUrl}?token=${encodeURIComponent(user.token)}&sessionId=${encodeURIComponent(user.sessionId)}`;
-
-      const newWindow = window.open(authenticatedUrl, '_blank');
+      const newWindow = window.open(viewUrl, '_blank');
       if (!newWindow) {
         throw new Error('팝업이 차단되었습니다. 팝업 차단을 해제해주세요.');
       }
       newWindow.opener = null;
+
+      console.debug('File view in new tab:', {
+        filename: msg.file.filename,
+        viewUrl
+      });
+
     } catch (error) {
       console.error('File view error:', error);
       setError(error.message || '파일 보기 중 오류가 발생했습니다.');
     }
   };
 
+  // ✅ 개선된 이미지 미리보기 렌더링 (배경 여백 문제 해결)
   const renderImagePreview = (originalname) => {
     try {
       if (!msg?.file?.filename) {
@@ -189,26 +239,29 @@ const FileMessage = forwardRef(({
         );
       }
 
-      const user = authService.getCurrentUser();
-      if (!user?.token || !user?.sessionId) {
-        throw new Error('인증 정보가 없습니다.');
+      // ✅ 이미 useEffect에서 생성된 previewUrl 사용
+      if (!previewUrl) {
+        return (
+          <div className="flex items-center justify-center h-full bg-gray-100">
+            <Image className="w-8 h-8 text-gray-400" />
+          </div>
+        );
       }
 
-      const previewUrl = fileService.getThumbnailUrl(msg.file, true);
-
       return (
-        <div className="bg-transparent-pattern">
+        <div className="bg-gray-100">
           <img
             src={previewUrl}
             alt={originalname}
-            className="object-cover rounded-sm"
+            className="object-cover rounded-sm w-full h-auto"
             onLoad={() => {
               console.debug('Image loaded successfully:', originalname);
             }}
             onError={(e) => {
               console.error('Image load error:', {
                 error: e.error,
-                originalname
+                originalname,
+                previewUrl
               });
               e.target.onerror = null;
               e.target.src = '/images/placeholder-image.png';
@@ -234,10 +287,8 @@ const FileMessage = forwardRef(({
     const originalname = getDecodedFilename(msg.file?.originalname || 'Unknown File');
     const size = fileService.formatFileSize(msg.file?.size || 0);
 
-    const previewWrapperClass =
-      "overflow-hidden";
-    const fileInfoClass =
-      "flex items-center gap-3 p-1 mt-2";
+    const previewWrapperClass = "overflow-hidden";
+    const fileInfoClass = "flex items-center gap-3 p-1 mt-2";
 
     if (mimetype.startsWith('image/')) {
       return (
@@ -257,10 +308,10 @@ const FileMessage = forwardRef(({
     if (mimetype.startsWith('video/')) {
       return (
         <div className={previewWrapperClass}>
-          <div>
+          <div className="bg-gray-900">
             {previewUrl ? (
               <video
-                className="object-cover rounded-sm"
+                className="object-cover rounded-sm w-full h-auto"
                 controls
                 preload="metadata"
                 aria-label={`${originalname} 비디오`}
@@ -393,18 +444,5 @@ const FileMessage = forwardRef(({
     </div>
   );
 });
-
-FileMessage.defaultProps = {
-  msg: {
-    file: {
-      mimetype: '',
-      filename: '',
-      originalname: '',
-      size: 0
-    }
-  },
-  isMine: false,
-  currentUser: null
-};
 
 export default React.memo(FileMessage);
