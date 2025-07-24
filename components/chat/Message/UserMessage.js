@@ -1,20 +1,20 @@
-import React, { useMemo } from 'react';
-import MessageContent from './MessageContent';
-import MessageActions from './MessageActions';
+import React, { forwardRef, useMemo } from 'react';
+import { generateColorFromEmail, getContrastTextColor } from '../../../utils/colorUtils';
 import PersistentAvatar from '../../common/PersistentAvatar';
 import ReadStatus from '../ReadStatus';
-import { generateColorFromEmail, getContrastTextColor } from '../../../utils/colorUtils';
+import MessageActions from './MessageActions';
+import MessageContent from './MessageContent';
 
-const UserMessage = ({
-  msg = {}, 
-  isMine = false, 
+const UserMessage = forwardRef(({
+  msg = {},
+  isMine = false,
   currentUser = null,
   onReactionAdd,
   onReactionRemove,
   room = null,
   messageRef,
   socketRef
-}) => {
+}, ref) => {
   const formattedTime = new Date(msg.timestamp).toLocaleString('ko-KR', {
     year: 'numeric',
     month: 'long',
@@ -58,7 +58,7 @@ const UserMessage = ({
             <div className="message-time mr-3">
               {formattedTime}
             </div>
-            <ReadStatus 
+            <ReadStatus
               messageType={msg.type}
               participants={room.participants}
               readers={msg.readers}
@@ -66,11 +66,11 @@ const UserMessage = ({
               messageRef={messageRef}
               currentUserId={currentUser.id}
               socketRef={socketRef}
-            />            
+            />
           </div>
         </div>
-          
-        <MessageActions 
+
+        <MessageActions
           messageId={msg._id}
           messageContent={msg.content}
           reactions={msg.reactions}
@@ -83,14 +83,14 @@ const UserMessage = ({
       </div>
     </div>
   );
-};
+});
 
 UserMessage.defaultProps = {
   msg: {},
   isMine: false,
   currentUser: null,
-  onReactionAdd: () => {},
-  onReactionRemove: () => {},
+  onReactionAdd: () => { },
+  onReactionRemove: () => { },
   room: null
 };
 
