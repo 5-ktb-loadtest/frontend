@@ -15,6 +15,14 @@ import ReadStatus from '../ReadStatus';
 import MessageActions from './MessageActions';
 import MessageContent from './MessageContent';
 
+function s3ToHttpUrl(s3Url) {
+  const match = s3Url.match(/^s3:\/\/([^/]+)\/(.+)$/);
+  if (!match) return s3Url;
+  const [_, bucket, key] = match;
+  // 필요에 따라 region을 환경변수로 빼도 됩니다.
+  return `https://${bucket}.s3.ap-northeast-2.amazonaws.com/${key}`;
+}
+
 const FileActions = ({ handleViewInNewTab, handleFileDownload }) => (
   <div className="file-actions mt-2 pt-2 border-t border-gray-200">
     <Button
@@ -61,10 +69,10 @@ const FileMessage = forwardRef(({
   useEffect(() => {
     if (msg?.file) {
       try {
-        console.log('msg.file', msg.file);
         // ✅ 개선된 방식: fileService에서 roomId를 함께 전달
         const url = fileService.getThumbnailUrl(msg.file, { preview: true }, msg.room);
-        setPreviewUrl(url);
+        const safeUrl = s3ToHttpUrl(url);
+        setPreviewUrl(safeUrl);
 
         console.debug('Preview URL generated:', {
           fileInfo: msg.file,
