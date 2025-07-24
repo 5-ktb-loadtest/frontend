@@ -282,6 +282,14 @@ const ChatInput = forwardRef(({
           return;
       }
     } else if (e.key === 'Enter' && !e.shiftKey) {
+
+
+      // IME 조합 중일 때는 Enter 키 무시
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
+
+
       e.preventDefault();
       if (message.trim() || files.length > 0) {
         handleSubmit(e);
@@ -509,7 +517,8 @@ const ChatInput = forwardRef(({
                 padding: '12px',
                 fontFamily: 'inherit',
                 fontSize: '14px',
-                lineHeight: '1.5'
+                lineHeight: '1.5',
+                color: '#333'
               }}
             />
 
