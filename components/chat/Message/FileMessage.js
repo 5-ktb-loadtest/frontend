@@ -71,6 +71,7 @@ const FileMessage = forwardRef(({
       try {
         // ✅ 개선된 방식: fileService에서 roomId를 함께 전달
         const url = fileService.getThumbnailUrl(msg.file, { preview: true }, msg.room);
+        console.log("Generated preview URL:", url);
         const safeUrl = s3ToHttpUrl(url);
         setPreviewUrl(safeUrl);
 
@@ -158,7 +159,6 @@ const FileMessage = forwardRef(({
       // ✅ fileService의 다운로드 URL 생성 메서드 사용
       const downloadUrl = fileService.getDownloadUrl(msg.file, msg.room);
 
-      console.log('Generated download URL:', downloadUrl);
 
       // Method 1: fetch를 사용한 다운로드 (더 안정적)
       try {

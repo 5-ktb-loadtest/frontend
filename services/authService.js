@@ -1,6 +1,6 @@
 import axios from 'axios';
-import socketService from './socket';
 import { Toast } from '../components/Toast';
+import socketService from './socket';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -55,7 +55,7 @@ const validateCredentials = (credentials) => {
 
 // 재시도 딜레이 계산
 const getRetryDelay = (retryCount) => {
-  const delay = RETRY_CONFIG.baseDelay * 
+  const delay = RETRY_CONFIG.baseDelay *
     Math.pow(RETRY_CONFIG.backoffFactor, retryCount) *
     (1 + Math.random() * 0.1);
   return Math.min(delay, RETRY_CONFIG.maxDelay);
@@ -154,7 +154,6 @@ class AuthService {
     }
   }
 
-
   // logout 메소드 수정
   async logout() {
     try {
@@ -203,7 +202,7 @@ class AuthService {
       throw this._handleError(error);
     }
   }
-  
+
   async updateProfile(data) {
     try {
       const user = this.getCurrentUser();
@@ -231,10 +230,10 @@ class AuthService {
           token: user.token,
           sessionId: user.sessionId
         };
-        
+
         localStorage.setItem('user', JSON.stringify(updatedUser));
         window.dispatchEvent(new Event('userProfileUpdate'));
-        
+
         return updatedUser;
       }
 
@@ -242,7 +241,7 @@ class AuthService {
 
     } catch (error) {
       console.error('Profile update error:', error);
-      
+
       if (error.response?.status === 401) {
         try {
           const refreshed = await this.refreshToken();
@@ -306,7 +305,125 @@ class AuthService {
 
       throw this._handleError(error);
     }
-  }  
+  }
+
+  // authService.js에서 수정해야 할 부분들
+
+  // 프로필 이미지 업로드 메서드 수정
+  async uploadProfileImage(formData) {
+    try {
+      const user = this.getCurrentUser();
+      if (!user?.token) {
+        throw new Error('인증 정보가 없습니다.');
+      }
+
+      // 경로 수정: /profile/image → /profile-image
+      const response = await fetch(`${API_URL}/api/users/profile-image`, {
+        method: 'POST',
+        headers: {
+          'x-auth-token': user.token,
+          'x-session-id': user.sessionId
+        },
+        body: formData // FormData는 Content-Type 헤더를 자동으로 설정
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || '이미지 업로드에 실패했습니다.');
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || '이미지 업로드에 실패했습니다.');
+      }
+
+      return data; // { success: true, message: "...", imageUrl: "/uploads/..." }
+    } catch (error) {
+      console.error('Upload profile image error:', error);
+      throw error;
+    }
+  }
+
+  // 프로필 이미지 삭제 메서드 수정
+  async deleteProfileImage() {
+    try {
+      const user = this.getCurrentUser();
+      if (!user?.token) {
+        throw new Error('인증 정보가 없습니다.');
+      }
+
+      // 경로 수정: /profile/image → /profile-image
+      const response = await fetch(`${API_URL}/api/users/profile-image`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': user.token,
+          'x-session-id': user.sessionId
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || '이미지 삭제에 실패했습니다.');
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || '이미지 삭제에 실패했습니다.');
+      }
+
+      return data; // { success: true, message: "프로필 이미지가 삭제되었습니다." }
+    } catch (error) {
+      console.error('Delete profile image error:', error);
+      throw error;
+    }
+  }
+
+  // 추가: 프로필 이미지 URL만 업데이트하는 메서드 (S3 URL 저장용)
+  async updateProfileImage(imageUrl) {
+    try {
+      const user = this.getCurrentUser();
+      if (!user?.token) {
+        throw new Error('인증 정보가 없습니다.');
+      }
+
+      const response = await axios.put(
+        `${API_URL}/api/users/profile-image`,
+        { profileImage: imageUrl },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-auth-token': user.token,
+            'x-session-id': user.sessionId
+          }
+        }
+      );
+
+      if (response.data?.success) {
+        return response.data;
+      }
+
+      throw new Error(response.data?.message || '프로필 이미지 URL 업데이트에 실패했습니다.');
+
+    } catch (error) {
+      console.error('Profile image URL update error:', error);
+
+      if (error.response?.status === 401) {
+        try {
+          const refreshed = await this.refreshToken();
+          if (refreshed) {
+            return this.updateProfileImage(imageUrl);
+          }
+        } catch (refreshError) {
+          throw new Error('인증이 만료되었습니다. 다시 로그인해주세요.');
+        }
+      }
+
+      throw this._handleError(error);
+    }
+  }
 
   getCurrentUser() {
     try {
@@ -315,7 +432,7 @@ class AuthService {
 
       const user = JSON.parse(userStr);
       const SESSION_TIMEOUT = 2 * 60 * 60 * 1000;
-      
+
       if (Date.now() - user.lastActivity > SESSION_TIMEOUT) {
         this.logout();
         return null;
@@ -375,7 +492,7 @@ class AuthService {
       throw error;
     }
   }
-  
+
   async refreshToken() {
     try {
       const user = this.getCurrentUser();
@@ -414,32 +531,32 @@ class AuthService {
       }
 
       console.log('Checking server at:', API_URL);
-      
+
       const response = await api.get('/health', {
         timeout: 3000, // 타임아웃을 3초로 단축
         validateStatus: (status) => status < 500 // 5xx 에러만 실제 에러로 처리
       });
-      
+
       return response.data?.status === 'ok' || response.status === 200;
     } catch (error) {
       console.error('Server connection check failed:', error);
-      
+
       // 네트워크 에러나 타임아웃은 더 구체적인 메시지 제공
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
         throw new Error('서버 응답 시간이 초과되었습니다.');
       }
-      
+
       if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
         throw new Error('네트워크 연결을 확인해주세요.');
       }
-      
+
       throw this._handleError(error);
     }
   }
 
   _handleError(error) {
     if (error.isNetworkError) return error;
-    
+
     if (axios.isAxiosError(error)) {
       if (!error.response) {
         return new Error('서버와 통신할 수 없습니다. 네트워크 연결을 확인해주세요.');
